@@ -1,0 +1,1 @@
+# Deliberately empty; candidate npm must not read private/global registry credentials.

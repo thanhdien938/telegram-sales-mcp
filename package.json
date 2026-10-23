@@ -1,0 +1,30 @@
+{
+  "name": "unofficial-telegram-sales-mcp",
+  "version": "1.0.0-beta.2",
+  "private": true,
+  "license": "MIT",
+  "description": "Unofficial Windows-first Telegram read/CRM source beta; Telegram dispatch disabled.",
+  "type": "module",
+  "engines": {
+    "node": ">=22.19.0"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "start": "node dist/cli.js",
+    "crm:init": "node dist/crm-init.js",
+    "test:offline": "node --test --test-concurrency=1 tests/public.test.mjs tests/portable.test.mjs",
+    "verify:export": "node scripts/verify-export.mjs",
+    "login": "node dist/login.js",
+    "manifest:refresh": "node scripts/refresh-manifest.mjs",
+    "verify:manifest": "node scripts/verify-manifest.mjs"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.31.0",
+    "zod": "^4.6.5"
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.4",
+    "typescript": "^5.9.3"
+  }
+}

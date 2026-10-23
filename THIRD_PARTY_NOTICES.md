@@ -1,0 +1,13 @@
+# Third-party notices
+
+The MIT LICENSE at the root covers first-party source only, authorized for this source export by the repository owner. It does not relicense dependencies, TDLib, native executables, or external assets.
+
+Direct runtime dependencies are `@modelcontextprotocol/sdk` and `zod`; direct development dependencies are TypeScript and Node.js typings. See package-lock.json for exact resolved versions, integrity and package metadata. The installed package's own LICENSE/NOTICE files govern it; preserve applicable notices if later redistributing installed dependencies or bundles. This candidate's third-party metadata is an inventory, not legal clearance of every transitive artifact.
+
+Verified installed direct metadata: SDK 1.32.1 (MIT), zod 4.6.7 (MIT), TypeScript 5.9.3 (Apache-2.0), Node typings 22.20.5 (MIT). The resolved lock has 99 records including the root: MIT 88, ISC 7, BSD-3-Clause 2, BSD-2-Clause 1, Apache-2.0 1. License references are the corresponding package LICENSE/NOTICE files after installation and the SPDX license metadata in package-lock.json; upstream legal review remains required for actual redistribution. No dependency source has been relicensed as first-party. npm lifecycle hooks are disabled for installation. No installed node_modules tree or native executable is intended as part of the source export.
+
+TDLib upstream is understood from prior review to use Boost Software License 1.0, with notice obligations and an object-code exception. The actual TDLib/custom sidecar revision, binary provenance, architecture, build chain and dependent-library notice set for a public install are UNVERIFIED. Official build/API/license references were checked for beta.2; see NATIVE_BUILD.md. A reproducibly built/pinned Windows artifact is still missing, binaries are not bundled, and no binary compliance clearance is claimed. Review upstream/license terms for the precise future distribution.
+
+No official Telegram logo or media assets are included. The integration is unofficial and not endorsed. API application identity, privacy, user consent, branding and applicable AI/data-use terms need distribution-specific Owner/legal review before real-account/public use. BYO credentials alone is not compliance proof.
+
+The new native/tdjson_wrapper.py and native/windows_vault.py are first-party MIT source using documented C/Windows interfaces; no private sidecar source or executable was copied. Python standard library/Windows APIs and actual native dependencies retain their own terms. ABI, build origin and binary rights remain HOLD until reviewed evidence.

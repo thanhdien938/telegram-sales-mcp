@@ -1,0 +1,454 @@
+import type { ITdlibAdapter } from '../../telegram/tdlib/adapter.js';
+import { DomainError } from '../common/errors.js';
+import { parseAndValidateSafeId } from '../common/id-validator.js';
+import type {
+  MessagesContextOptions,
+  MessagesContextResult,
+  MessagesHistoryOptions,
+  MessagesHistoryResult,
+  NormalizedContentType,
+  NormalizedFileDescriptor,
+  NormalizedMessage,
+  NormalizedMessageSender,
+  NormalizedReplyReference,
+} from './types.js';
+
+const MAX_TEXT_LENGTH = 4096;
+
+function truncateText(
+  text: unknown,
+  maxLength = MAX_TEXT_LENGTH,
+): string | null {
+  if (typeof text !== 'string') {
+    return null;
+  }
+  if (text.length <= maxLength) {
+    return text;
+  }
+  return text.slice(0, maxLength) + '... [truncated]';
+}
+
+function toSafeString(val: unknown, fallback = ''): string {
+  if (typeof val === 'string') {
+    return val;
+  }
+  if (typeof val === 'number' || typeof val === 'bigint') {
+    return String(val);
+  }
+  return fallback;
+}
+
+function extractFileDescriptor(
+  fileObj: unknown,
+  fileName?: string | null,
+  mimeType?: string | null,
+): NormalizedFileDescriptor | null {
+  if (typeof fileObj !== 'object' || fileObj === null) {
+    return null;
+  }
+  const f = fileObj as Record<string, unknown>;
+  const fileId = toSafeString(f.id, '0');
+  const size = typeof f.size === 'number' ? f.size : 0;
+  const expectedSize =
+    typeof f.expected_size === 'number' ? f.expected_size : size;
+  const local =
+    typeof f.local === 'object' && f.local !== null
+      ? (f.local as Record<string, unknown>)
+      : null;
+  const isDownloaded = local?.is_downloading_completed === true;
+
+  return Object.freeze({
+    file_id: fileId,
+    size,
+    expected_size: expectedSize,
+    mime_type: mimeType ?? null,
+    file_name: fileName ?? null,
+    is_downloaded: isDownloaded,
+  });
+}
+
+function extractPhotoDescriptor(
+  photoObj: unknown,
+): NormalizedFileDescriptor | null {
+  if (typeof photoObj !== 'object' || photoObj === null) {
+    return null;
+  }
+  const p = photoObj as Record<string, unknown>;
+  const sizes = Array.isArray(p.sizes) ? p.sizes : [];
+  if (sizes.length === 0) {
+    return null;
+  }
+  // Pick the largest photo size
+  const largest = sizes[sizes.length - 1] as Record<string, unknown>;
+  return extractFileDescriptor(largest.photo, null, 'image/jpeg');
+}
+
+export function normalizeMessage(
+  rawMsg: Readonly<Record<string, unknown>>,
+): NormalizedMessage {
+  const chatId = toSafeString(rawMsg.chat_id, '0');
+  const messageId = toSafeString(rawMsg.id, '0');
+  const date = typeof rawMsg.date === 'number' ? rawMsg.date : 0;
+  const editDate = typeof rawMsg.edit_date === 'number' ? rawMsg.edit_date : 0;
+  const outgoing = rawMsg.is_outgoing === true;
+
+  let sender: NormalizedMessageSender = Object.freeze({
+    type: 'unknown',
+    id: null,
+  });
+
+  const senderObj = rawMsg.sender_id;
+  if (typeof senderObj === 'object' && senderObj !== null) {
+    const s = senderObj as Record<string, unknown>;
+    if (s['@type'] === 'messageSenderUser') {
+      sender = Object.freeze({
+        type: 'user',
+        id: toSafeString(s.user_id, ''),
+      });
+    } else if (s['@type'] === 'messageSenderChat') {
+      sender = Object.freeze({
+        type: 'chat',
+        id: toSafeString(s.chat_id, ''),
+      });
+    }
+  }
+
+  let replyTo: NormalizedReplyReference | null = null;
+  const replyObj = rawMsg.reply_to;
+  if (typeof replyObj === 'object' && replyObj !== null) {
+    const r = replyObj as Record<string, unknown>;
+    if (r['@type'] === 'messageReplyToMessage') {
+      replyTo = Object.freeze({
+        chat_id: toSafeString(r.chat_id, chatId),
+        message_id: toSafeString(r.message_id, '0'),
+      });
+    }
+  }
+
+  let contentType: NormalizedContentType = 'unsupported';
+  let text: string | null = null;
+  let caption: string | null = null;
+  let file: NormalizedFileDescriptor | null = null;
+  let unsupportedType: string | null = null;
+
+  const content = rawMsg.content;
+  if (typeof content === 'object' && content !== null) {
+    const c = content as Record<string, unknown>;
+    const cType = toSafeString(c['@type'], '');
+
+    switch (cType) {
+      case 'messageText': {
+        contentType = 'text';
+        const formatted = c.text as Record<string, unknown> | undefined;
+        text = truncateText(formatted?.text);
+        break;
+      }
+
+      case 'messagePhoto': {
+        contentType = 'photo';
+        const captionFormatted = c.caption as
+          Record<string, unknown> | undefined;
+        caption = truncateText(captionFormatted?.text);
+        file = extractPhotoDescriptor(c.photo);
+        break;
+      }
+
+      case 'messageVideo': {
+        contentType = 'video';
+        const captionFormatted = c.caption as
+          Record<string, unknown> | undefined;
+        caption = truncateText(captionFormatted?.text);
+        const v = c.video as Record<string, unknown> | undefined;
+        file = extractFileDescriptor(
+          v?.video,
+          typeof v?.file_name === 'string' ? v.file_name : null,
+          typeof v?.mime_type === 'string' ? v.mime_type : 'video/mp4',
+        );
+        break;
+      }
+
+      case 'messageDocument': {
+        contentType = 'document';
+        const captionFormatted = c.caption as
+          Record<string, unknown> | undefined;
+        caption = truncateText(captionFormatted?.text);
+        const d = c.document as Record<string, unknown> | undefined;
+        file = extractFileDescriptor(
+          d?.document,
+          typeof d?.file_name === 'string' ? d.file_name : null,
+          typeof d?.mime_type === 'string' ? d.mime_type : null,
+        );
+        break;
+      }
+
+      case 'messageVoiceNote': {
+        contentType = 'voice';
+        const captionFormatted = c.caption as
+          Record<string, unknown> | undefined;
+        caption = truncateText(captionFormatted?.text);
+        const vn = c.voice_note as Record<string, unknown> | undefined;
+        file = extractFileDescriptor(
+          vn?.voice,
+          null,
+          typeof vn?.mime_type === 'string' ? vn.mime_type : 'audio/ogg',
+        );
+        break;
+      }
+
+      case 'messageAudio': {
+        contentType = 'audio';
+        const captionFormatted = c.caption as
+          Record<string, unknown> | undefined;
+        caption = truncateText(captionFormatted?.text);
+        const a = c.audio as Record<string, unknown> | undefined;
+        file = extractFileDescriptor(
+          a?.audio,
+          typeof a?.file_name === 'string' ? a.file_name : null,
+          typeof a?.mime_type === 'string' ? a.mime_type : 'audio/mpeg',
+        );
+        break;
+      }
+
+      case 'messageAnimation': {
+        contentType = 'animation';
+        const captionFormatted = c.caption as
+          Record<string, unknown> | undefined;
+        caption = truncateText(captionFormatted?.text);
+        const anim = c.animation as Record<string, unknown> | undefined;
+        file = extractFileDescriptor(
+          anim?.animation,
+          typeof anim?.file_name === 'string' ? anim.file_name : null,
+          typeof anim?.mime_type === 'string' ? anim.mime_type : 'video/mp4',
+        );
+        break;
+      }
+
+      case 'messageSticker': {
+        contentType = 'sticker';
+        const st = c.sticker as Record<string, unknown> | undefined;
+        caption = typeof st?.emoji === 'string' ? st.emoji : null;
+        file = extractFileDescriptor(st?.sticker, null, 'image/webp');
+        break;
+      }
+
+      case 'messageContact': {
+        contentType = 'contact';
+        const ct = c.contact as Record<string, unknown> | undefined;
+        const nameParts = [ct?.first_name, ct?.last_name]
+          .filter((part) => typeof part === 'string' && part.length > 0)
+          .join(' ');
+        text = truncateText(nameParts || 'Contact');
+        break;
+      }
+
+      case 'messageLocation': {
+        contentType = 'location';
+        const loc = c.location as Record<string, unknown> | undefined;
+        if (
+          typeof loc?.latitude === 'number' &&
+          typeof loc.longitude === 'number'
+        ) {
+          text = `${loc.latitude.toFixed(6)}, ${loc.longitude.toFixed(6)}`;
+        } else {
+          text = 'Location';
+        }
+        break;
+      }
+
+      default: {
+        contentType = 'unsupported';
+        unsupportedType = cType || 'unknown';
+        break;
+      }
+    }
+  }
+
+  return Object.freeze({
+    chat_id: chatId,
+    message_id: messageId,
+    date,
+    edit_date: editDate,
+    outgoing,
+    sender,
+    content_type: contentType,
+    text,
+    caption,
+    reply_to: replyTo,
+    file,
+    ...(unsupportedType !== null ? { unsupported_type: unsupportedType } : {}),
+  });
+}
+
+function sortMessagesChronologically(
+  messages: NormalizedMessage[],
+): NormalizedMessage[] {
+  return messages.sort((a, b) => {
+    if (a.date !== b.date) {
+      return a.date - b.date;
+    }
+    const aId = BigInt(a.message_id);
+    const bId = BigInt(b.message_id);
+    return aId < bId ? -1 : aId > bId ? 1 : 0;
+  });
+}
+
+export class MessagesService {
+  private readonly adapter: ITdlibAdapter;
+
+  constructor(adapter: ITdlibAdapter) {
+    this.adapter = adapter;
+  }
+
+  async getHistory(
+    options: MessagesHistoryOptions,
+  ): Promise<MessagesHistoryResult> {
+    const chatVal = parseAndValidateSafeId(options.chatId, 'chat_id');
+
+    const limit = options.limit ?? 20;
+    if (!Number.isInteger(limit) || limit < 1 || limit > 100) {
+      throw new DomainError(
+        'INVALID_ARGUMENT',
+        'limit must be an integer between 1 and 100',
+      );
+    }
+
+    let fromMsgIdNumber = 0;
+    if (options.fromMessageId !== undefined) {
+      const fromVal = parseAndValidateSafeId(
+        options.fromMessageId,
+        'from_message_id',
+      );
+      fromMsgIdNumber = fromVal.numberId;
+    }
+
+    const offset = options.offset ?? 0;
+    if (!Number.isInteger(offset) || offset < -100 || offset > 100) {
+      throw new DomainError(
+        'INVALID_ARGUMENT',
+        'offset must be an integer between -100 and 100',
+      );
+    }
+
+    const rawResult = await this.adapter.getChatHistory({
+      chatId: chatVal.numberId,
+      fromMessageId: fromMsgIdNumber,
+      offset,
+      limit,
+    });
+
+    const normalized = rawResult.messages.map(normalizeMessage);
+    const sorted = sortMessagesChronologically(normalized);
+
+    let nextFromMessageId: string | null = null;
+    if (normalized.length >= limit && sorted.length > 0 && sorted[0]) {
+      nextFromMessageId = sorted[0].message_id;
+    }
+
+    return Object.freeze({
+      mode: 'history',
+      chat_id: chatVal.stringId,
+      messages: Object.freeze(sorted),
+      total_count: rawResult.total_count,
+      order: 'chronological',
+      next_from_message_id: nextFromMessageId,
+    });
+  }
+
+  async getContext(
+    options: MessagesContextOptions,
+  ): Promise<MessagesContextResult> {
+    const chatVal = parseAndValidateSafeId(options.chatId, 'chat_id');
+    const msgVal = parseAndValidateSafeId(options.messageId, 'message_id');
+
+    const before = options.before ?? 5;
+    const after = options.after ?? 5;
+
+    if (!Number.isInteger(before) || before < 0 || before > 50) {
+      throw new DomainError(
+        'INVALID_ARGUMENT',
+        'before count must be an integer between 0 and 50',
+      );
+    }
+
+    if (!Number.isInteger(after) || after < 0 || after > 50) {
+      throw new DomainError(
+        'INVALID_ARGUMENT',
+        'after count must be an integer between 0 and 50',
+      );
+    }
+
+    const totalRequested = before + after + 1;
+    if (totalRequested > 100) {
+      throw new DomainError(
+        'INVALID_ARGUMENT',
+        'Total requested context messages (before + after + 1) cannot exceed 100',
+      );
+    }
+
+    // Verify anchor message exists
+    const rawAnchor = await this.adapter.getMessage({
+      chatId: chatVal.numberId,
+      messageId: msgVal.numberId,
+    });
+    const anchorMessage = normalizeMessage(rawAnchor);
+
+    // Fetch surrounding messages using negative offset
+    // In TDLib, offset = -after starts fetching `after` messages newer than anchor
+    const rawHistory = await this.adapter.getChatHistory({
+      chatId: chatVal.numberId,
+      fromMessageId: msgVal.numberId,
+      offset: -after,
+      limit: totalRequested,
+    });
+
+    const normalizedMap = new Map<string, NormalizedMessage>();
+    normalizedMap.set(anchorMessage.message_id, anchorMessage);
+
+    for (const raw of rawHistory.messages) {
+      const msg = normalizeMessage(raw);
+      normalizedMap.set(msg.message_id, msg);
+    }
+
+    const allMessages = Array.from(normalizedMap.values());
+    const sorted = sortMessagesChronologically(allMessages);
+
+    // Calculate actual before and after counts relative to anchor
+    const anchorBigId = BigInt(anchorMessage.message_id);
+    let actualBefore = 0;
+    let actualAfter = 0;
+    for (const msg of sorted) {
+      const currentBigId = BigInt(msg.message_id);
+      if (currentBigId < anchorBigId) {
+        actualBefore++;
+      } else if (currentBigId > anchorBigId) {
+        actualAfter++;
+      }
+    }
+
+    return Object.freeze({
+      mode: 'context',
+      chat_id: chatVal.stringId,
+      anchor_message_id: msgVal.stringId,
+      messages: Object.freeze(sorted),
+      before_count: actualBefore,
+      after_count: actualAfter,
+      total_count: sorted.length,
+      order: 'chronological',
+    });
+  }
+
+  async getMessage(
+    chatId: string,
+    messageId: string,
+  ): Promise<NormalizedMessage> {
+    const chatVal = parseAndValidateSafeId(chatId, 'chat_id');
+    const msgVal = parseAndValidateSafeId(messageId, 'message_id');
+
+    const raw = await this.adapter.getMessage({
+      chatId: chatVal.numberId,
+      messageId: msgVal.numberId,
+    });
+
+    return normalizeMessage(raw);
+  }
+}
