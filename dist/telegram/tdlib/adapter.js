@@ -1,4 +1,4 @@
-import { assertReadRpc, denyTelegramWrite } from '../../policy/read-only.js';
+import { assertRpcAllowed, denyTelegramWrite } from '../../policy/read-only.js';
 import { sanitizeTdlibErrorMessage, TdlibError } from './errors.js';
 import { isTdlibAuthorizationState, parseSafeAccountIdentity, } from './types.js';
 import { UpdateSupervisor } from './update-supervisor.js';
@@ -155,13 +155,16 @@ export class TdlibAdapter {
     updateSupervisor;
     lifecycleState = 'stopped';
     unsubscribeTransport = null;
+    writesEnabled;
     pendingRequests = new Map();
     requestSeq = 0;
     lastErrorType = null;
     queriedAuthorizationState = null;
     privateIdentityEpoch = 0;
     async dispatchMutation(method, payload) {
-        denyTelegramWrite();
+        if (!this.writesEnabled) {
+            denyTelegramWrite();
+        }
         try {
             this.assertOperational();
             await this.assertReadyForReads();
@@ -173,6 +176,8 @@ export class TdlibAdapter {
             return await this.sendInternalRequest(method, payload);
         }
         catch (error) {
+            if (error instanceof Error && 'code' in error && error.code === 'PUBLIC_TELEGRAM_WRITES_DISABLED')
+                throw error;
             if (error instanceof TdlibWriteError)
                 throw error;
             if (error instanceof TdlibError && error.code === 'TDLIB_ERROR')
@@ -642,6 +647,7 @@ export class TdlibAdapter {
             this.requestTimeoutMs > 2_147_483_647) {
             throw new TdlibError('LIFECYCLE_ERROR', 'Invalid request limits');
         }
+        this.writesEnabled = options.writesEnabled ?? false;
         this.updateSupervisor = new UpdateSupervisor();
         privateIdentityReaders.set(this, () => this.#readReadyRegularUser());
     }
@@ -1338,7 +1344,7 @@ export class TdlibAdapter {
         return `p3a_${String(this.requestSeq)}_${randomSuffix}`;
     }
     async sendInternalRequest(requestType, params = {}) {
-        assertReadRpc(requestType);
+        assertRpcAllowed(requestType, this.writesEnabled);
         this.assertOperational();
         if (this.pendingRequests.size >= this.maxPendingRequests) {
             this.lastErrorType = 'OVERFLOW';

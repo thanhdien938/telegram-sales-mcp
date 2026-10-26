@@ -28,8 +28,8 @@ for(const path of files) {
     check('BOT_TOKEN',/\b\d{7,12}:[A-Za-z0-9_-]{30,}\b/);
     check('JWT',/\beyJ[A-Za-z0-9_-]{15,}\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+/);
     check('OPERATOR_PATH',/[DE]:[\\/]|C:[\\/]Users[\\/]/i);
-for (const m of t.matchAll(/(?<!\w)(?:\+\d{9,15}|-\d{9,14})(?!\w)/g)) {
-      const line=t.slice(0,m.index).split('\n').at(-1)+t.slice(m.index).split('\n')[0];
+    for (const m of t.matchAll(/(?<!\w)(?:\+\d{9,15}|-\d{9,14})(?!\w)/g)) {
+      const line=(t.slice(0,m.index).split('\n').at(-1)+t.slice(m.index).split('\n')[0]).replace(/\r$/, '');
       if(path==='dist/domain/common/id-validator.d.ts' && /^export declare const MIN_INT32 = -\d+;$/.test(line) && Number(m[0])===-(2**31)) reviewedFalsePositives.push({path,category:'GENERATED_SIGNED_INTEGER_BOUND'});
       else findings.push({path,category:'PHONE_CHAT_SHAPE'});
     }

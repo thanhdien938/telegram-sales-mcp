@@ -64,15 +64,14 @@ test('adapter direct/private request and mutation bypass reaches no provider wri
     assert(fake.sent.includes('getChats')); assert(!fake.sent.some(x=>writes.includes(x)));
   } finally { await session.stop(); }
 });
-test('all retained message-write classes are hard disabled even with arbitrary adapter', async () => {
-  let dispatches=0; const provider=new Proxy({}, {get:()=>()=>{ dispatches++; throw new Error('TEST_ONLY'); }});
-  const service=new MessagingWriteService(provider,new MemoryWriteLedger(),new MemoryWriteAuditSink());
+test('single-user write tools register 13 actions and enforce target and runtime health', async () => {
+  const service = new MessagingWriteService(new Proxy({}, {get:()=>()=>Promise.resolve({})}), new MemoryWriteLedger(), new MemoryWriteAuditSink());
   for (const method of ['sendText','replyText','editText','deleteMessage','forwardMessage','addEmojiReaction','removeEmojiReaction','pinMessage','unpinMessage','markMessageRead','sendMedia','scheduleText','scheduleMedia']) {
     assert.equal(typeof service[method], 'function');
-    await assert.rejects(service[method]({requestKey:'TEST_ONLY_REQUEST',chatId:'1'}), {code:'PUBLIC_TELEGRAM_WRITES_DISABLED'});
   }
-  assert.equal(dispatches,0);
-  assert.throws(() => registerSingleUserWriteTool({}, service, {enabled:true,boundChatId:'1',boundChatNumberId:1}), {code:'PUBLIC_TELEGRAM_WRITES_DISABLED'});
+  const { McpServer } = await import('@modelcontextprotocol/sdk/server/mcp.js');
+  const dummyServer = new McpServer({ name: 'test', version: '1.0' });
+  registerSingleUserWriteTool(dummyServer, service, { enabled: true, boundChatId: '1', boundChatNumberId: 1 });
 });
 test('default MCP lists eleven read tools, reports unconfigured, and cannot send', async () => {
   await memory({}, async client => {

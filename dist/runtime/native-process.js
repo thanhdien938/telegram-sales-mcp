@@ -1,7 +1,10 @@
 import { spawn } from 'node:child_process';
 /** Only fixed generic wrapper and verified explicit bundle files; secrets never in argv/env. */
-export function spawnNativeWire(python, wrapper, dll, mode) {
-    const child = spawn(python, ['-I', '-B', wrapper, '--dll', dll, '--mode', mode], { stdio: 'pipe', windowsHide: true, env: { SystemRoot: process.env.SystemRoot ?? '', PATH: process.env.PATH ?? '' } });
+export function spawnNativeWire(python, wrapper, dll, mode, writesEnabled = false) {
+    const args = ['-I', '-B', wrapper, '--dll', dll, '--mode', mode];
+    if (writesEnabled)
+        args.push('--enable-writes');
+    const child = spawn(python, args, { stdio: 'pipe', windowsHide: true, env: { SystemRoot: process.env.SystemRoot ?? '', PATH: process.env.PATH ?? '' } });
     let stderrBytes = 0, stopped, ended = false;
     child.stderr.on('data', (b) => { stderrBytes += b.length; if (stderrBytes > 4096)
         child.kill(); });

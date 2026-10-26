@@ -1,8 +1,10 @@
 import { randomUUID } from 'node:crypto';
 import { assertNativeRpc } from './native-policy.js';
+import { isWriteRpc } from '../policy/read-only.js';
 /** Private wire state lives in closures; the read facade cannot obtain the setup port. */
 export function createNativeChannel(wire, mode, limits = {}) {
     const timeout = limits.timeoutMs ?? 15000, max = limits.maxBytes ?? 1024 * 1024, pendingMax = limits.maxPending ?? 32;
+    const writesEnabled = limits.writesEnabled ?? false;
     if (![timeout, max, pendingMax].every(n => Number.isSafeInteger(n) && n > 0))
         throw new Error('NATIVE_LIMITS_REJECTED');
     const pending = new Map();
@@ -136,7 +138,7 @@ export function createNativeChannel(wire, mode, limits = {}) {
             fail();
     };
     async function request(scope, method, params = {}) {
-        assertNativeRpc(scope, method, mode);
+        assertNativeRpc(scope, method, mode, writesEnabled);
         if (scope === 'setup') {
             const expected = { setTdlibParameters: 'authorizationStateWaitTdlibParameters', setAuthenticationPhoneNumber: 'authorizationStateWaitPhoneNumber', checkAuthenticationCode: 'authorizationStateWaitCode', checkAuthenticationPassword: 'authorizationStateWaitPassword' };
             if (wasReady || expected[method] !== authState)
@@ -160,10 +162,12 @@ export function createNativeChannel(wire, mode, limits = {}) {
             throw new Error('NATIVE_START_REJECTED'); state = 'running'; removeData = wire.onData(receive); removeExit = wire.onExit(fail); },
         stop, getLifecycleState: () => state,
         async send(payload) {
-            assertNativeRpc('read', payload['@type'], mode);
+            const method = payload['@type'];
+            const scope = isWriteRpc(method) ? 'write' : 'read';
+            assertNativeRpc(scope, method, mode, writesEnabled);
             if (typeof payload['@extra'] !== 'string')
                 throw new Error('NATIVE_CORRELATION_REQUIRED');
-            const response = await request('read', payload['@type'], payload);
+            const response = await request(scope, method, payload);
             emit({ kind: 'response', extra: payload['@extra'], payload: response });
         },
         subscribe(fn) { listeners.add(fn); return () => { listeners.delete(fn); }; },

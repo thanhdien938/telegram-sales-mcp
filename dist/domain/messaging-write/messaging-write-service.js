@@ -1,4 +1,3 @@
-import { denyTelegramWrite } from '../../policy/read-only.js';
 import { createHash } from 'node:crypto';
 import { parseAndValidateSafeId } from '../common/id-validator.js';
 import { DomainError } from '../common/errors.js';
@@ -78,7 +77,6 @@ export class MessagingWriteService {
         return this.execute('MARK_READ', input);
     }
     async execute(operation, input) {
-        denyTelegramWrite();
         const chatId = parseAndValidateSafeId(operation === 'FORWARD_MESSAGE' ? input.targetChatId : input.chatId, 'chat_id');
         if (chatId.numberId === 0)
             throw new DomainError('INVALID_ID', 'chat_id must be nonzero');

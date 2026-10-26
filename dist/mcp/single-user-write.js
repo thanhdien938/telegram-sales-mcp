@@ -1,4 +1,3 @@
-import { denyTelegramWrite } from '../policy/read-only.js';
 import { z } from 'zod';
 import { parseAndValidateSafeId } from '../domain/common/id-validator.js';
 const ENABLE_ENV = 'TELEGRAM_SINGLE_USER_WRITES';
@@ -70,7 +69,6 @@ export const SINGLE_USER_WRITE_TOOL_NAMES = Object.freeze([
  * state denies rather than attempting a write.
  */
 export function registerSingleUserWriteTool(server, service, config, accountService) {
-    denyTelegramWrite();
     const register = (name, description, schema, run) => {
         server.registerTool(name, { description, inputSchema: schema }, async (args) => {
             try {

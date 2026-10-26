@@ -1,4 +1,3 @@
-import { denyTelegramWrite } from '../../policy/read-only.js';
 import { createHash } from 'node:crypto';
 import { parseAndValidateSafeId } from '../common/id-validator.js';
 import { DomainError } from '../common/errors.js';
@@ -248,7 +247,6 @@ export class MessagingWriteService {
       requestKey: unknown;
     },
   ): Promise<WriteEvidence> {
-    denyTelegramWrite();
     const chatId = parseAndValidateSafeId(
       operation === 'FORWARD_MESSAGE' ? input.targetChatId : input.chatId,
       'chat_id',

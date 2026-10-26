@@ -101,7 +101,6 @@ export function buildRuntimeAwareHealth(
   },
   singleUserWritesEnabled = false,
 ): TelegramHealthResult {
-  singleUserWritesEnabled = false;
   if (!accountService) {
     return P2_HEALTH_RESPONSE;
   }
@@ -191,7 +190,6 @@ export function buildRuntimeAwareCapabilities(
   singleUserWritesEnabled = false,
   salesLocalEnabled = false,
 ): TelegramCapabilitiesResult {
-  singleUserWritesEnabled = false;
   if (!accountService) {
     return Object.freeze({ ...P2_CAPABILITIES_RESPONSE, sales_local: salesLocalEnabled });
   }

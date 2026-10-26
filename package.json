@@ -3,7 +3,7 @@
   "version": "1.0.0-beta.2",
   "private": true,
   "license": "MIT",
-  "description": "Unofficial Windows-first Telegram read/CRM source beta; Telegram dispatch disabled.",
+  "description": "Unofficial Windows-first Telegram Sales MCP — 33/33 full tool parity (11 Read + 13 Action + 9 Sales CRM).",
   "type": "module",
   "engines": {
     "node": ">=22.19.0"
@@ -13,11 +13,13 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "start": "node dist/cli.js",
     "crm:init": "node dist/crm-init.js",
-    "test:offline": "node --test --test-concurrency=1 tests/public.test.mjs tests/portable.test.mjs",
+    "test:offline": "node --test --test-concurrency=1 tests/public.test.mjs tests/portable.test.mjs tests/parity33.test.mjs tests/native_setup_doctor_repair.test.mjs",
     "verify:export": "node scripts/verify-export.mjs",
     "login": "node dist/login.js",
     "manifest:refresh": "node scripts/refresh-manifest.mjs",
-    "verify:manifest": "node scripts/verify-manifest.mjs"
+    "verify:manifest": "node scripts/verify-manifest.mjs",
+    "doctor": "node dist/cli.js doctor",
+    "generate:manifest": "node scripts/generate-native-manifest.mjs"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.31.0",

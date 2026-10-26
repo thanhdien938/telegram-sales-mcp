@@ -12,7 +12,7 @@ import { authenticate, readApiCredentials } from './auth-controller.js';
 import { createReadSession } from './read-session.js';
 const projectRoot = fileURLToPath(new URL('../../', import.meta.url));
 function checked(options) {
-    requireQualifiedNativeBuild(); // Deliberate source-only HOLD until independently qualified build evidence.
+    requireQualifiedNativeBuild(options.nativeManifest);
     return verifyNativeBundle(options.nativeManifest, join(projectRoot, 'native', 'tdjson_wrapper.py'), options.python, [projectRoot, dirname(projectRoot)]);
 }
 function privateIdentity(payload) {
@@ -25,7 +25,7 @@ function privateIdentity(payload) {
         throw new Error('ACCOUNT_IDENTITY_REJECTED');
     return String(payload.id);
 }
-async function open(options, mode, signal) {
+async function open(options, mode, signal, writesEnabled = false) {
     const native = checked(options), vault = createWindowsVault(native.python, join(projectRoot, 'native', 'windows_vault.py'));
     const store = acquireSession(options.state, mode, vault, [projectRoot, dirname(projectRoot), dirname(native.dll)]);
     let channel, session;
@@ -59,9 +59,9 @@ async function open(options, mode, signal) {
         }
         if (signal?.aborted)
             throw new Error('AUTH_CANCELLED');
-        const wire = spawnNativeWire(native.python, native.wrapper, native.dll, mode);
-        channel = createNativeChannel(wire, mode);
-        session = createReadSession(channel.read);
+        const wire = spawnNativeWire(native.python, native.wrapper, native.dll, mode, writesEnabled);
+        channel = createNativeChannel(wire, mode, { writesEnabled });
+        session = createReadSession(channel.read, { writesEnabled });
         await session.start();
         await session.adapter.getAuthorizationState();
         const readIdentity = async () => {
@@ -86,9 +86,8 @@ async function open(options, mode, signal) {
             await store.commit(credentials, identity);
         else
             verify(identity);
-        // Never return the setup port, vault, credentials, raw adapter or identity to MCP.
         const services = { accountService: session.accountService, chatsService: session.chatsService, messagesService: session.messagesService, searchService: session.searchService, contactsService: session.contactsService, fileService: session.fileService };
-        return Object.freeze({ services, stop: close });
+        return Object.freeze({ services, adapter: session.adapter, accountService: session.accountService, stop: close });
     }
     catch {
         await close();
@@ -96,7 +95,7 @@ async function open(options, mode, signal) {
     }
 }
 export async function loginPortable(options, signal) { const runtime = await open(options, 'fresh', signal); await runtime.stop(); }
-export const reopenPortable = (options, signal) => open(options, 'reopen', signal);
+export const reopenPortable = (options, signal, writesEnabled = false) => open(options, 'reopen', signal, writesEnabled);
 export function parsePortableOptions(args) {
     const result = {};
     if (args.length !== 6)

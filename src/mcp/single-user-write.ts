@@ -1,4 +1,3 @@
-import { denyTelegramWrite } from '../policy/read-only.js';
 import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { parseAndValidateSafeId } from '../domain/common/id-validator.js';
@@ -112,7 +111,6 @@ export function registerSingleUserWriteTool(
   config: SingleUserWriteConfig,
   accountService?: AccountService,
 ): void {
-  denyTelegramWrite();
   const register = (
     name: (typeof SINGLE_USER_WRITE_TOOL_NAMES)[number],
     description: string,

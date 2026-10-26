@@ -1,4 +1,4 @@
-import { assertReadRpc, denyTelegramWrite } from '../../policy/read-only.js';
+import { assertRpcAllowed, denyTelegramWrite } from '../../policy/read-only.js';
 import { sanitizeTdlibErrorMessage, TdlibError } from './errors.js';
 import type { ITdlibTransport } from './transport.js';
 import {
@@ -60,6 +60,7 @@ export interface TdlibAdapterOptions {
   readonly transport: ITdlibTransport;
   readonly requestTimeoutMs?: number;
   readonly maxPendingRequests?: number;
+  readonly writesEnabled?: boolean;
 }
 
 export interface TdlibAdapterHealth {
@@ -357,6 +358,7 @@ export class TdlibAdapter implements ITdlibAdapter {
 
   private lifecycleState: TdlibTransportLifecycleState = 'stopped';
   private unsubscribeTransport: (() => void) | null = null;
+  private readonly writesEnabled: boolean;
   private readonly pendingRequests = new Map<string, PendingRequestEntry>();
   private requestSeq = 0;
   private lastErrorType: SafeErrorType | null = null;
@@ -367,7 +369,9 @@ export class TdlibAdapter implements ITdlibAdapter {
     method: string,
     payload: Record<string, unknown>,
   ): Promise<Readonly<Record<string, unknown>>> {
-    denyTelegramWrite();
+    if (!this.writesEnabled) {
+      denyTelegramWrite();
+    }
     try {
       this.assertOperational();
       await this.assertReadyForReads();
@@ -377,6 +381,7 @@ export class TdlibAdapter implements ITdlibAdapter {
     try {
       return await this.sendInternalRequest(method, payload);
     } catch (error) {
+      if (error instanceof Error && 'code' in error && error.code === 'PUBLIC_TELEGRAM_WRITES_DISABLED') throw error;
       if (error instanceof TdlibWriteError) throw error;
       if (error instanceof TdlibError && error.code === 'TDLIB_ERROR')
         throw new TdlibWriteError('REJECTED');
@@ -986,6 +991,7 @@ export class TdlibAdapter implements ITdlibAdapter {
     ) {
       throw new TdlibError('LIFECYCLE_ERROR', 'Invalid request limits');
     }
+    this.writesEnabled = options.writesEnabled ?? false;
     this.updateSupervisor = new UpdateSupervisor();
     privateIdentityReaders.set(this, () => this.#readReadyRegularUser());
   }
@@ -1975,7 +1981,7 @@ export class TdlibAdapter implements ITdlibAdapter {
     requestType: string,
     params: Record<string, unknown> = {},
   ): Promise<Readonly<Record<string, unknown>>> {
-    assertReadRpc(requestType);
+    assertRpcAllowed(requestType, this.writesEnabled);
     this.assertOperational();
 
     if (this.pendingRequests.size >= this.maxPendingRequests) {

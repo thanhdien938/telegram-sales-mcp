@@ -1,50 +1,126 @@
-# Installation and qualification boundaries
+# Windows Installation and Configuration Guide
 
-## Offline source/CRM commands
+This guide describes how to install, configure, and operate the Telegram Sales MCP server on Windows x64 with full 33-tool parity.
 
-Node 22.19+ and npm; Windows Node 22.19.0 was used for current source QA. SQLite emits an experimental warning. Other platforms/minor versions are unqualified.
+## 1. System Requirements
+
+- **OS:** Windows 10 or 11 (64-bit x64 architecture).
+- **Node.js:** v22.19.0 or higher.
+- **Python:** v3.11+ 64-bit (standard CPython with standard `ctypes` library).
+- **TDLib:** 64-bit `tdjson.dll` compiled from the [official TDLib repository](https://github.com/tdlib/td) or downloaded from trusted releases (such as NuGet package `tdlib.native.win-x64`; see [NATIVE_BUILD.md](NATIVE_BUILD.md) and [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)).
+- **Telegram Account:** An active Telegram account with API credentials (`api_id` and `api_hash`) obtained from [my.telegram.org](https://my.telegram.org).
+
+## 2. Clone and Offline Verification
+
+Clone the repository and install runtime dependencies:
 
 ```powershell
+git clone https://github.com/thanhdien938/telegram-sales-mcp.git
+cd telegram-sales-mcp
+
+# Install dependencies and build TypeScript code
 npm ci --ignore-scripts --userconfig .npmrc --globalconfig config/npm-globalrc
-npm run typecheck
 npm run build
+
+# Run offline regression test suite (50+ tests)
 npm run test:offline
-python -I -B tests/native_source_test.py
-node dist/cli.js --help
-node dist/crm-init.js --help
-node dist/login.js --help
 ```
 
-Python mock tests use standard library only and never load TDLib/DPAPI. Dependencies use the public npm registry, candidate-local cache/config and disabled lifecycle hooks; no personal registry login is needed. Tests create disposable, unmistakable TEST_ONLY fixtures under `.qa/`, not production paths. Positive real terminal/native/account tests are NOT_RUN.
+## 3. Run Environment Diagnostics
 
-For a local MCP client spawn `node dist/cli.js` with this directory as cwd. Eleven read definitions are discoverable; Telegram stays NOT_CONFIGURED without a qualified provider. No network listener or cloud bridge is created. Client disconnect/Ctrl+C closes only this process/resources it owns.
-
-## Optional local CRM
-
-In a private interactive terminal, choose your own absolute, absent directory outside application repositories/state. The placeholder below is not a literal Windows path:
+Run the built-in diagnostic tool to check your environment:
 
 ```powershell
-node dist/crm-init.js "<ABSOLUTE_ABSENT_CRM_DIRECTORY>"
-node dist/cli.js --crm "<ABSOLUTE_INITIALIZED_CRM_DIRECTORY>"
+npm run doctor
 ```
 
-Read the disclosure and type the requested acknowledgment; no schema/open before consent. Noninteractive input, arbitrary existing roots and path/DB/marker links are refused. This local permission is not Telegram-send permission. Eight local tools appear only after accepted store opening. Do not use real customer data during beta qualification.
+The doctor command verifies:
+- Node.js runtime and architecture
+- Python 64-bit executable availability
+- Native TDLib manifest and DLL integrity
+- Session state directory and writer lock
+- Sales CRM SQLite database and consent marker
+- Outbound write opt-in configuration
 
-## Native setup — source interface present, execution HOLD
+## 4. TDLib Native Manifest Generation
 
-Verified upstream guidance: [official TDLib build generator](https://tdlib.github.io/td/build.html?language=Python), [official source/build overview](https://github.com/tdlib/td#building), [official JSON C API](https://core.telegram.org/tdlib/docs/td__json__client_8h.html). These are reference links, not a supplied binary or a successfully reproduced install recipe. [NATIVE_BUILD.md](NATIVE_BUILD.md) lists missing commit/compiler/dependency/ABI evidence. Do not use an existing account's binaries/session or random download.
+The native bridge requires a Schema 1 JSON manifest referencing your local `tdjson.dll` with its verified SHA-256 checksum and official TDLib Git commit. The output directory must be an external folder outside the repository (such as `%LOCALAPPDATA%\telegram-sales-mcp\native-bundle`):
 
-After a distinct reviewed build/qualification revision ONLY, the source interfaces are intended to be:
-
-```text
-node dist/login.js --state <ABSOLUTE_ABSENT_STATE_ROOT> --native-manifest <ABSOLUTE_REVIEWED_MANIFEST> --python <ABSOLUTE_64BIT_PYTHON>
-node dist/cli.js --state <ABSOLUTE_OWNED_STATE_ROOT> --native-manifest <ABSOLUTE_REVIEWED_MANIFEST> --python <ABSOLUTE_64BIT_PYTHON>
+```powershell
+node scripts/generate-native-manifest.mjs `
+  --dll "<PATH_TO_TDJSON_DLL>" `
+  --commit "<REAL_TDLIB_COMMIT_SHA>" `
+  --out "<USER_NATIVE_BUNDLE_DIR>"
 ```
 
-**Do not treat these as validated native setup commands today.** Current build gate rejects before opening native/state or prompting. `npm run login -- --help` is safe help only. No actual phone/code/2FA has been submitted.
+This command validates your TDLib DLL, copies it to `<USER_NATIVE_BUNDLE_DIR>\tdjson.dll`, and writes `<USER_NATIVE_BUNDLE_DIR>\manifest.json` with the exact file path, SHA-256 hash, and upstream commit SHA.
 
-Fresh source flow: explicit new-session acknowledgment, own Telegram API app credentials entered without echo, phone/code/2FA only as requested privately, bounded state transitions, verified Ready account binding, sealed vault and close. Native setup RPC authority is private to this command, never a tool. Unsupported email/QR/registration states stop; no automatic retry.
+## 5. Account Authentication (Private Terminal Login)
 
-State root must be new, non-reparse, non-overlapping with this project, its sibling workspace parent or native bundle root; there is no implicit home/session path. Reopen requires marker/vault/account/native binding and exclusive writer lock. Auth-required/unseal/identity failure stops and requests separate private terminal setup, with no prompt on MCP stdin. Crash/unconfirmed cleanup leaves the lock and fails closed; no automatic stale-lock deletion, migration, session adoption or root removal. Resolve recovery only after a separately reviewed ownership check.
+Run the interactive terminal login in a dedicated PowerShell window:
 
-A provenance manifest is not self-certified by hashes: review official upstream commit, build recipe/compiler/architecture, all DLL dependencies/notices and our wrapper source. Current accepted manifest shape is an internal integrity contract, not a ready-made binary trust grant. Native assets are not bundled. Node/Python/DLL architecture and exact TDLib API revision must be independently qualified before any native gate revision.
+```powershell
+node dist/login.js --state "<ABSOLUTE_STATE_DIR>" --native-manifest "<ABSOLUTE_MANIFEST_PATH>" --python "<PYTHON_EXE>"
+```
+
+During login:
+1. You will be prompted for your Telegram `api_id` and `api_hash`.
+2. Enter your phone number in international format (`+country_code_number`).
+3. Enter the Telegram OTP verification code received on your devices or SMS.
+4. Enter your Two-Factor Authentication (2FA) cloud password if enabled.
+5. All sensitive input is hidden (no terminal echo). Telegram API credentials and session encryption keys are encrypted at rest using Windows DPAPI (`CurrentUser` scope) and stored in `<STATE_DIR>/vault.bin`; `<STATE_DIR>/session.json` contains account and session binding metadata without exposing raw secrets.
+
+## 6. Initialize Local Sales CRM
+
+Initialize a dedicated directory for your SQLite CRM database:
+
+```powershell
+node dist/crm-init.js "<ABSOLUTE_CRM_DIR>"
+```
+
+Follow the interactive prompt to type the acknowledgment. This creates `sales.sqlite` and the required consent marker.
+
+## 7. Launch MCP Server (33-Tool Mode)
+
+To expose all 33 tools (11 Read + 13 Action + 9 CRM), launch the stdio MCP server with both CRM and write options enabled:
+
+```powershell
+node dist/cli.js `
+  --crm "<ABSOLUTE_CRM_DIR>" `
+  --state "<ABSOLUTE_STATE_DIR>" `
+  --native-manifest "<ABSOLUTE_MANIFEST_PATH>" `
+  --python "<PYTHON_EXE>" `
+  --writes `
+  --chat-id "<TARGET_CHAT_ID>"
+```
+
+### Environment Variable Alternative
+You can also configure the server via environment variables:
+```powershell
+$env:TELEGRAM_SINGLE_USER_WRITES = "1"
+$env:TELEGRAM_SINGLE_USER_CHAT_ID = "<TARGET_CHAT_ID>"
+node dist/cli.js --crm "<ABSOLUTE_CRM_DIR>" --state "<ABSOLUTE_STATE_DIR>" --native-manifest "<ABSOLUTE_MANIFEST_PATH>" --python "<PYTHON_EXE>"
+```
+
+## 8. MCP Client Configuration Example
+
+For desktop MCP clients (such as Claude Desktop or Roo Code / Cline), configure the stdio server entry:
+
+```json
+{
+  "mcpServers": {
+    "telegram-sales": {
+      "command": "node",
+      "args": [
+        "<PATH_TO_PROJECT>/dist/cli.js",
+        "--crm", "<ABSOLUTE_CRM_DIR>",
+        "--state", "<ABSOLUTE_STATE_DIR>",
+        "--native-manifest", "<ABSOLUTE_MANIFEST_PATH>",
+        "--python", "<PYTHON_EXE>",
+        "--writes",
+        "--chat-id", "<TARGET_CHAT_ID>"
+      ]
+    }
+  }
+}
+```

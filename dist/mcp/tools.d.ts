@@ -105,8 +105,8 @@ export declare const publicSearchInputSchema: z.ZodObject<{
 }, z.core.$strict>;
 export declare const contactsInputSchema: z.ZodObject<{
     mode: z.ZodEnum<{
-        list: "list";
         search: "search";
+        list: "list";
     }>;
     query: z.ZodOptional<z.ZodString>;
     limit: z.ZodOptional<z.ZodNumber>;
