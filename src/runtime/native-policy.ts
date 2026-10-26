@@ -30,6 +30,17 @@ export function assertNativeRpc(
 
 export const NATIVE_BUILD_STATUS: 'HOLD' | 'VERIFIED' = 'HOLD';
 
+export function isPlaceholderCommit(commit: string): boolean {
+  if (!commit || typeof commit !== 'string') return true;
+  const lower = commit.trim().toLowerCase();
+  if (!/^[a-f0-9]{40}$/.test(lower)) return true;
+  // All identical characters: e.g. 40 'a's, 40 '0's, 40 'f's
+  if (/^([a-f0-9])\1{39}$/.test(lower)) return true;
+  // Common synthetic or patterned placeholders
+  if (/^(0123456789|abcdef|deadbeef|1234567890)/.test(lower)) return true;
+  return false;
+}
+
 export function checkNativeManifestQualification(manifestFile?: string): 'HOLD' | 'VERIFIED' {
   if (!manifestFile || typeof manifestFile !== 'string') {
     return 'HOLD';
@@ -47,7 +58,9 @@ export function checkNativeManifestQualification(manifestFile?: string): 'HOLD' 
       m.upstream === 'https://github.com/tdlib/td' &&
       typeof m.upstreamCommit === 'string' &&
       /^[a-f0-9]{40}$/.test(m.upstreamCommit) &&
+      !isPlaceholderCommit(m.upstreamCommit) &&
       m.api === 'td-json-1.x' &&
+      m.noticeReview === 'OWNER_REVIEW_REQUIRED' &&
       m.artifacts &&
       typeof m.artifacts === 'object' &&
       'tdjson.dll' in m.artifacts

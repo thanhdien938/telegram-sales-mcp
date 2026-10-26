@@ -60,16 +60,26 @@ The report provides status on all prerequisites:
 - **Write Mode:** Confirms if write mode is enabled and whether a target chat is bound.
 
 ### Procedure B: Manifest Generation
-When using a local `tdjson.dll`:
+When preparing your native bundle with `tdjson.dll`:
 ```powershell
-npm run generate:manifest "<PATH_TO_TDJSON_DLL>"
+node scripts/generate-native-manifest.mjs `
+  --dll "<PATH_TO_TDJSON_DLL>" `
+  --commit "<REAL_TDLIB_COMMIT_SHA>" `
+  --out "<USER_NATIVE_BUNDLE_DIR>"
 ```
-This produces `tdlib-manifest.json` with:
+This produces `<USER_NATIVE_BUNDLE_DIR>\manifest.json` with Schema 1 format:
 ```json
 {
   "schema": 1,
-  "dll_path": "<PATH_TO_TDJSON_DLL>",
-  "sha256": "<COMPUTED_SHA256_HASH>"
+  "platform": "win32-x64",
+  "protocol": 1,
+  "upstream": "https://github.com/tdlib/td",
+  "upstreamCommit": "<REAL_TDLIB_COMMIT_SHA>",
+  "api": "td-json-1.x",
+  "noticeReview": "OWNER_REVIEW_REQUIRED",
+  "artifacts": {
+    "tdjson.dll": "<COMPUTED_SHA256_HASH>"
+  }
 }
 ```
 

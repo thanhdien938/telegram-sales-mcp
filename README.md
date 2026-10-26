@@ -47,7 +47,10 @@ The doctor diagnostics will report the status of Node, Python, TDLib manifest/DL
 
 ### 4. Setup Steps
 Refer to [INSTALL.md](INSTALL.md) and [RUNBOOK.md](RUNBOOK.md) for full setup instructions:
-1. Generate native TDLib manifest: `node scripts/generate-native-manifest.mjs <PATH_TO_TDJSON_DLL>`
+1. Generate native TDLib manifest in an external directory:
+   ```powershell
+   node scripts/generate-native-manifest.mjs --dll "<PATH_TO_TDJSON_DLL>" --commit "<TDLIB_COMMIT_SHA>" --out "<USER_NATIVE_BUNDLE_DIR>"
+   ```
 2. Authenticate account in private terminal: `node dist/login.js --state <STATE_DIR> --native-manifest <MANIFEST_PATH> --python <PYTHON_EXE>`
 3. Initialize local CRM database: `node dist/crm-init.js <CRM_DIR>`
 4. Launch MCP Server with 33 tools:

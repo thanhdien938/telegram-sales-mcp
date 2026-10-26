@@ -44,13 +44,16 @@ The doctor command verifies:
 
 ## 4. TDLib Native Manifest Generation
 
-The native bridge requires a Schema 1 JSON manifest referencing your local `tdjson.dll` with its verified SHA-256 checksum:
+The native bridge requires a Schema 1 JSON manifest referencing your local `tdjson.dll` with its verified SHA-256 checksum and official TDLib Git commit. The output directory must be an external folder outside the repository (such as `%LOCALAPPDATA%\telegram-sales-mcp\native-bundle`):
 
 ```powershell
-node scripts/generate-native-manifest.mjs "<PATH_TO_TDJSON_DLL>"
+node scripts/generate-native-manifest.mjs `
+  --dll "<PATH_TO_TDJSON_DLL>" `
+  --commit "<REAL_TDLIB_COMMIT_SHA>" `
+  --out "<USER_NATIVE_BUNDLE_DIR>"
 ```
 
-This command generates `tdlib-manifest.json` in the current directory with the exact file path and SHA-256 hash.
+This command validates your TDLib DLL, copies it to `<USER_NATIVE_BUNDLE_DIR>\tdjson.dll`, and writes `<USER_NATIVE_BUNDLE_DIR>\manifest.json` with the exact file path, SHA-256 hash, and upstream commit SHA.
 
 ## 5. Account Authentication (Private Terminal Login)
 

@@ -13,7 +13,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "start": "node dist/cli.js",
     "crm:init": "node dist/crm-init.js",
-    "test:offline": "node --test --test-concurrency=1 tests/public.test.mjs tests/portable.test.mjs tests/parity33.test.mjs",
+    "test:offline": "node --test --test-concurrency=1 tests/public.test.mjs tests/portable.test.mjs tests/parity33.test.mjs tests/native_setup_doctor_repair.test.mjs",
     "verify:export": "node scripts/verify-export.mjs",
     "login": "node dist/login.js",
     "manifest:refresh": "node scripts/refresh-manifest.mjs",

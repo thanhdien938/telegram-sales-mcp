@@ -32,8 +32,8 @@ The MCP server uses a multi-tier isolated process architecture:
    - Uses `CurrentUser` scope so keys can only be decrypted by the same Windows user on the same machine.
    - Does not store plaintext credentials or write logs to disk.
 
-3. **`src/runtime/native-manifest.ts` & `scripts/generate-native-manifest.mjs`**:
-   - Validates that the loaded DLL matches the exact file path and SHA-256 hash specified in `tdlib-manifest.json` (Schema 1).
+3. **`src/runtime/native-integrity.ts` & `scripts/generate-native-manifest.mjs`**:
+   - Validates that the loaded DLL matches the exact file path and SHA-256 hash specified in `manifest.json` (Schema 1) in an external native bundle directory.
 
 ## 2. Obtaining or Building TDLib for Windows x64
 
@@ -60,9 +60,12 @@ Users can build `tdjson.dll` from upstream source or obtain a pre-built binary m
 4. The output `tdjson.dll` will be located under `bin/Release/` or `bin/`.
 
 ### Manifest Generation
-Once `tdjson.dll` is located, generate your local manifest:
+Once `tdjson.dll` is located, generate your local manifest in an external directory outside the repository (e.g. `%LOCALAPPDATA%\telegram-sales-mcp\native-bundle`):
 ```powershell
-node scripts/generate-native-manifest.mjs "<PATH_TO_TDJSON_DLL>"
+node scripts/generate-native-manifest.mjs `
+  --dll "<PATH_TO_TDJSON_DLL>" `
+  --commit "<REAL_TDLIB_COMMIT_SHA>" `
+  --out "<USER_NATIVE_BUNDLE_DIR>"
 ```
 
 ## 3. Security and Process Supervision

@@ -37,7 +37,7 @@ if (args[0] === 'doctor') {
         }
     }
     process.stdout.write(`\n${report.summary}\n\n`);
-    process.exit(0);
+    process.exit(report.isHealthy ? 0 : 1);
 }
 else if (args.includes('--help')) {
     process.stdout.write('Telegram Sales MCP — 33-tool single-user runtime\n\n' +
