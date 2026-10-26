@@ -1,6 +1,9 @@
 import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { parseAndValidateSafeId } from '../domain/common/id-validator.js';
+import type { AccountService } from '../domain/index.js';
+import type { MessagingWriteService } from '../domain/messaging-write/index.js';
+import type { SingleUserWriteConfig } from './single-user-write.js';
 import {
   GROUP_PRIORITIES,
   LEAD_STAGES,
@@ -24,6 +27,7 @@ export const SALES_TOOL_NAMES = Object.freeze([
   'telegram_sales_quick_reply_upsert',
   'telegram_sales_quick_replies_list',
   'telegram_sales_quick_reply_preview',
+  'telegram_sales_quick_reply_send',
 ] as const);
 
 const boundedText = (max: number, min = 0) =>
@@ -107,7 +111,13 @@ function okResult(result: Record<string, unknown>): {
 }
 
 /** Eight local tools, never a Telegram sender. */
-export function registerSalesTools(server: McpServer, store: LocalSalesStore): void {
+export function registerSalesTools(
+  server: McpServer,
+  store: LocalSalesStore,
+  messagingWriteService?: MessagingWriteService,
+  config?: SingleUserWriteConfig,
+  accountService?: AccountService,
+): void {
   server.registerTool(
     'telegram_sales_lead_upsert',
     {
@@ -327,6 +337,73 @@ export function registerSalesTools(server: McpServer, store: LocalSalesStore): v
       });
     },
   );
+  if (messagingWriteService && config) {
+    server.registerTool(
+      'telegram_sales_quick_reply_send',
+      {
+        description:
+          'Renders a saved quick-reply template and sends/replies it in the single operator-approved chat bound in local config. Never accepts a model-supplied chat id. Opt-in; disabled unless both sales DB and single-user writes are configured.',
+        inputSchema: z
+          .object({
+            template_code: templateCode,
+            variables: templateVariables.optional(),
+            reply_message_id: positiveMessageId.optional(),
+            request_key: requestKey,
+          })
+          .strict(),
+      },
+      async (args) => {
+        try {
+          if (accountService) {
+            const health = accountService.getRuntimeHealth();
+            if (
+              health.runtime_status !== 'ready' ||
+              !health.authenticated ||
+              health.reauth_required
+            ) {
+              return denyResult('RUNTIME_NOT_READY');
+            }
+          }
+          const template = store.getQuickReply(args.template_code);
+          if (!template) {
+            return denyResult('TEMPLATE_NOT_FOUND');
+          }
+          const rendered = renderTemplate(
+            template.text,
+            (args.variables ?? {}) as Partial<Record<TemplateVar, string>>,
+          );
+          if (rendered.missingVars.length > 0) {
+            return denyResult('MISSING_TEMPLATE_VARS');
+          }
+          const evidence = args.reply_message_id
+            ? await messagingWriteService.replyText({
+                chatId: config.boundChatId,
+                replyMessageId: args.reply_message_id,
+                text: rendered.finalText,
+                requestKey: args.request_key,
+              })
+            : await messagingWriteService.sendText({
+                chatId: config.boundChatId,
+                text: rendered.finalText,
+                requestKey: args.request_key,
+              });
+          return okResult({
+            ...evidence,
+            final_text: rendered.finalText,
+            matched_vars: rendered.matchedVars,
+          });
+        } catch (error) {
+          const code =
+            error instanceof Error &&
+            'code' in error &&
+            typeof error.code === 'string'
+              ? error.code
+              : 'WRITE_UNAVAILABLE';
+          return denyResult(code);
+        }
+      },
+    );
+  }
 
 }
 

@@ -15,12 +15,16 @@ READ = frozenset(['getAuthorizationState', 'getMe', 'loadChats', 'getChats', 'ge
  'searchPublicChats', 'searchPublicPosts', 'searchPublicMessagesByTag', 'searchContacts',
  'getUser', 'getFile', 'getBasicGroup', 'getSupergroup', 'getSupergroupFullInfo',
  'getBasicGroupFullInfo', 'getChatMember', 'getSupergroupMembers', 'getChatAdministrators', 'close'])
+WRITE = frozenset(['sendMessage', 'sendMessageAlbum', 'editMessageText', 'editMessageCaption',
+ 'deleteMessages', 'forwardMessages', 'addMessageReaction', 'removeMessageReaction',
+ 'pinChatMessage', 'unpinChatMessage', 'viewMessages', 'setMessageSchedulingState', 'downloadFile'])
 AUTH = frozenset(['setTdlibParameters', 'setAuthenticationPhoneNumber', 'checkAuthenticationCode', 'checkAuthenticationPassword'])
 MAX = 1024 * 1024
 EXPECTED = {'setTdlibParameters':'authorizationStateWaitTdlibParameters','setAuthenticationPhoneNumber':'authorizationStateWaitPhoneNumber','checkAuthenticationCode':'authorizationStateWaitCode','checkAuthenticationPassword':'authorizationStateWaitPassword'}
 
-def allowed(scope, method, mode):
+def allowed(scope, method, mode, writes_enabled=False):
     if scope == 'read': return method in READ
+    if scope == 'write': return writes_enabled and method in WRITE
     return scope == 'setup' and method in AUTH and (mode == 'fresh' or method == 'setTdlibParameters')
 
 def encode(value):
@@ -55,6 +59,7 @@ def main():
     parser = argparse.ArgumentParser(add_help=False)
     parser.add_argument('--dll', required=True)
     parser.add_argument('--mode', choices=['fresh', 'reopen'], required=True)
+    parser.add_argument('--enable-writes', action='store_true', default=False)
     args = parser.parse_args()
     dll = load_native(args.dll)
     # Disable log stream before creating a client; stderr must never carry native content.
@@ -97,9 +102,9 @@ def main():
         elif message is False: raise ValueError('FRAME_REJECTED')
         elif isinstance(message, dict):
             body = message.get('payload'); ident = message.get('id')
-            if closing or message.get('kind') != 'request' or not isinstance(body, dict) or not isinstance(ident, str) or not 1 <= len(ident) <= 128 or ident in pending or len(pending) >= 32 or not allowed(message.get('scope'), body.get('@type'), args.mode): raise ValueError('RPC_REJECTED')
+            if closing or message.get('kind') != 'request' or not isinstance(body, dict) or not isinstance(ident, str) or not 1 <= len(ident) <= 128 or ident in pending or len(pending) >= 32 or not allowed(message.get('scope'), body.get('@type'), args.mode, args.enable_writes): raise ValueError('RPC_REJECTED')
             if message.get('scope') == 'setup' and (ever_ready or EXPECTED.get(body.get('@type')) != auth_state): raise ValueError('AUTH_PHASE_REJECTED')
-            if message.get('scope') == 'read' and body.get('@type') not in ['getAuthorizationState','close'] and auth_state != 'authorizationStateReady': raise ValueError('NOT_READY')
+            if message.get('scope') in ['read', 'write'] and body.get('@type') not in ['getAuthorizationState','close'] and auth_state != 'authorizationStateReady': raise ValueError('NOT_READY')
             pending.add(ident)
             body = dict(body); body['@extra'] = ident
             dll.td_send(client, encode(body))

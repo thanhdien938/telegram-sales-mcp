@@ -15,6 +15,7 @@ export declare function createNativeChannel(wire: WirePort, mode: NativeMode, li
     timeoutMs?: number;
     maxBytes?: number;
     maxPending?: number;
+    writesEnabled?: boolean;
 }): Readonly<{
     read: ITdlibTransport;
     setup: SetupPort;

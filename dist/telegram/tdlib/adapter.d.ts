@@ -23,6 +23,7 @@ export interface TdlibAdapterOptions {
     readonly transport: ITdlibTransport;
     readonly requestTimeoutMs?: number;
     readonly maxPendingRequests?: number;
+    readonly writesEnabled?: boolean;
 }
 export interface TdlibAdapterHealth {
     readonly transport_status: TdlibTransportLifecycleState;
@@ -160,6 +161,7 @@ export declare class TdlibAdapter implements ITdlibAdapter {
     private readonly updateSupervisor;
     private lifecycleState;
     private unsubscribeTransport;
+    private readonly writesEnabled;
     private readonly pendingRequests;
     private requestSeq;
     private lastErrorType;

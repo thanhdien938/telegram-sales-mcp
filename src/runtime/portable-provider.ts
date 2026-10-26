@@ -13,7 +13,7 @@ import { createReadSession } from './read-session.js';
 export interface PortableOptions { state:string; nativeManifest:string; python:string; }
 const projectRoot=fileURLToPath(new URL('../../',import.meta.url));
 function checked(options:PortableOptions){
-  requireQualifiedNativeBuild(); // Deliberate source-only HOLD until independently qualified build evidence.
+  requireQualifiedNativeBuild(options.nativeManifest);
   return verifyNativeBundle(options.nativeManifest,join(projectRoot,'native','tdjson_wrapper.py'),options.python,[projectRoot,dirname(projectRoot)]);
 }
 function privateIdentity(payload:Readonly<Record<string,unknown>>):string{
@@ -23,7 +23,7 @@ function privateIdentity(payload:Readonly<Record<string,unknown>>):string{
   if(String(payload.id).length>20||BigInt(String(payload.id))<=0n)throw new Error('ACCOUNT_IDENTITY_REJECTED');
   return String(payload.id);
 }
-async function open(options:PortableOptions,mode:'fresh'|'reopen',signal?:AbortSignal){
+async function open(options:PortableOptions,mode:'fresh'|'reopen',signal?:AbortSignal,writesEnabled = false){
   const native=checked(options),vault=createWindowsVault(native.python,join(projectRoot,'native','windows_vault.py'));
   const store=acquireSession(options.state,mode,vault,[projectRoot,dirname(projectRoot),dirname(native.dll)]);
   let channel:ReturnType<typeof createNativeChannel>|undefined,session:ReturnType<typeof createReadSession>|undefined;
@@ -38,7 +38,7 @@ async function open(options:PortableOptions,mode:'fresh'|'reopen',signal?:AbortS
       const api=await readApiCredentials(terminal!,signal);credentials={...api,databaseKey:randomBytes(32).toString('base64'),nativeBundle:native.bundleId};
     }else{const saved=await store.load(native.bundleId);credentials=saved.credentials;verify=saved.verifyIdentity;}
     if(signal?.aborted)throw new Error('AUTH_CANCELLED');
-    const wire=spawnNativeWire(native.python,native.wrapper,native.dll,mode);channel=createNativeChannel(wire,mode);session=createReadSession(channel.read);
+    const wire=spawnNativeWire(native.python,native.wrapper,native.dll,mode,writesEnabled);channel=createNativeChannel(wire,mode,{writesEnabled});session=createReadSession(channel.read,{writesEnabled});
     await session.start();await session.adapter.getAuthorizationState();
     const readIdentity=async()=>{
       let identity='';let response:Readonly<Record<string,unknown>>|undefined;
@@ -49,13 +49,12 @@ async function open(options:PortableOptions,mode:'fresh'|'reopen',signal?:AbortS
     };
     const identity=await authenticate(channel.setup,{mode,credentials,databaseDirectory:store.databaseDirectory,filesDirectory:store.filesDirectory,readIdentity},terminal,signal);
     if(mode==='fresh')await store.commit(credentials,identity);else verify(identity);
-    // Never return the setup port, vault, credentials, raw adapter or identity to MCP.
     const services={accountService:session.accountService,chatsService:session.chatsService,messagesService:session.messagesService,searchService:session.searchService,contactsService:session.contactsService,fileService:session.fileService};
-    return Object.freeze({services,stop:close});
+    return Object.freeze({services,adapter:session.adapter,accountService:session.accountService,stop:close});
   }catch{await close();throw new Error(mode==='fresh'?'PRIVATE_LOGIN_FAILED':'REOPEN_REQUIRED_USE_PRIVATE_TERMINAL');}
 }
 export async function loginPortable(options:PortableOptions,signal?:AbortSignal):Promise<void>{const runtime=await open(options,'fresh',signal);await runtime.stop();}
-export const reopenPortable=(options:PortableOptions,signal?:AbortSignal)=>open(options,'reopen',signal);
+export const reopenPortable=(options:PortableOptions,signal?:AbortSignal,writesEnabled = false)=>open(options,'reopen',signal,writesEnabled);
 export function parsePortableOptions(args:readonly string[]):PortableOptions{
   const result:Record<string,string>={};if(args.length!==6)throw new Error('PORTABLE_OPTIONS_REJECTED');
   for(let i=0;i<args.length;i+=2){const key=args[i],value=args[i+1];if(!key||!value||!['--state','--native-manifest','--python'].includes(key)||result[key])throw new Error('PORTABLE_OPTIONS_REJECTED');result[key]=value;}

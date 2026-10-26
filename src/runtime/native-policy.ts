@@ -1,11 +1,68 @@
-import { assertReadRpc } from '../policy/read-only.js';
+import { existsSync, readFileSync } from 'node:fs';
+import { assertReadRpc, denyTelegramWrite, WRITE_RPC } from '../policy/read-only.js';
 export type NativeMode = 'fresh' | 'reopen';
 const AUTH = new Set(['setTdlibParameters','setAuthenticationPhoneNumber','checkAuthenticationCode','checkAuthenticationPassword']);
-export function assertNativeRpc(scope: 'read' | 'setup', method: unknown, mode: NativeMode): void {
-  if (scope === 'read') { assertReadRpc(method); return; }
-  if (typeof method !== 'string' || !AUTH.has(method) || (mode === 'reopen' && method !== 'setTdlibParameters')) throw new Error('PRIVATE_AUTH_RPC_REJECTED');
+
+export function assertNativeRpc(
+  scope: 'read' | 'setup' | 'write',
+  method: unknown,
+  mode: NativeMode,
+  writesEnabled = false,
+): void {
+  if (scope === 'read') {
+    assertReadRpc(method);
+    return;
+  }
+  if (scope === 'write') {
+    if (!writesEnabled || typeof method !== 'string' || !WRITE_RPC.has(method)) {
+      denyTelegramWrite();
+    }
+    return;
+  }
+  if (
+    typeof method !== 'string' ||
+    !AUTH.has(method) ||
+    (mode === 'reopen' && method !== 'setTdlibParameters')
+  ) {
+    throw new Error('PRIVATE_AUTH_RPC_REJECTED');
+  }
 }
+
 export const NATIVE_BUILD_STATUS: 'HOLD' | 'VERIFIED' = 'HOLD';
-export function requireQualifiedNativeBuild(): void {
-  if (NATIVE_BUILD_STATUS !== 'VERIFIED') throw new Error('NATIVE_BUILD_HOLD');
+
+export function checkNativeManifestQualification(manifestFile?: string): 'HOLD' | 'VERIFIED' {
+  if (!manifestFile || typeof manifestFile !== 'string') {
+    return 'HOLD';
+  }
+  try {
+    if (!existsSync(manifestFile)) return 'HOLD';
+    const raw = readFileSync(manifestFile, 'utf8');
+    const m = JSON.parse(raw);
+    if (
+      m &&
+      typeof m === 'object' &&
+      m.schema === 1 &&
+      m.platform === 'win32-x64' &&
+      m.protocol === 1 &&
+      m.upstream === 'https://github.com/tdlib/td' &&
+      typeof m.upstreamCommit === 'string' &&
+      /^[a-f0-9]{40}$/.test(m.upstreamCommit) &&
+      m.api === 'td-json-1.x' &&
+      m.artifacts &&
+      typeof m.artifacts === 'object' &&
+      'tdjson.dll' in m.artifacts
+    ) {
+      return 'VERIFIED';
+    }
+  } catch {
+    return 'HOLD';
+  }
+  return 'HOLD';
+}
+
+export function requireQualifiedNativeBuild(manifestFile?: string): void {
+  const status = checkNativeManifestQualification(manifestFile);
+  if (status !== 'VERIFIED') {
+    throw new Error('NATIVE_BUILD_HOLD');
+  }
 }

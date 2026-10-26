@@ -2,6 +2,8 @@ import { randomUUID } from 'node:crypto';
 import type { ITdlibTransport } from '../telegram/tdlib/transport.js';
 import type { TdlibClientPayload, TdlibTransportEvent } from '../telegram/tdlib/types.js';
 import { assertNativeRpc, type NativeMode } from './native-policy.js';
+import { isWriteRpc } from '../policy/read-only.js';
+
 export interface WirePort {
   write(line: string): Promise<void>;
   onData(fn: (chunk: Buffer) => void): () => void;
@@ -13,10 +15,11 @@ export interface SetupPort {
   waitState(signal?: AbortSignal): Promise<string>;
 }
 /** Private wire state lives in closures; the read facade cannot obtain the setup port. */
-export function createNativeChannel(wire: WirePort, mode: NativeMode, limits: { timeoutMs?: number; maxBytes?: number; maxPending?: number } = {}) {
+export function createNativeChannel(wire: WirePort, mode: NativeMode, limits: { timeoutMs?: number; maxBytes?: number; maxPending?: number; writesEnabled?: boolean } = {}) {
   const timeout = limits.timeoutMs ?? 15000, max = limits.maxBytes ?? 1024*1024, pendingMax = limits.maxPending ?? 32;
+  const writesEnabled = limits.writesEnabled ?? false;
   if (![timeout,max,pendingMax].every(n=>Number.isSafeInteger(n)&&n>0)) throw new Error('NATIVE_LIMITS_REJECTED');
-  const pending = new Map<string,{scope:'read'|'setup';resolve:(v:Readonly<Record<string,unknown>>)=>void;reject:(e:Error)=>void;timer:ReturnType<typeof setTimeout>}>();
+  const pending = new Map<string,{scope:'read'|'setup'|'write';resolve:(v:Readonly<Record<string,unknown>>)=>void;reject:(e:Error)=>void;timer:ReturnType<typeof setTimeout>}>();
   const listeners = new Set<(e:TdlibTransportEvent)=>void>();
   let buffer=Buffer.alloc(0), state: 'stopped'|'running'|'failed'|'closed'='stopped', authState: string|undefined; const authQueue:string[]=[];
   const stateWaiters = new Set<(value?: string)=>void>();
@@ -55,8 +58,8 @@ export function createNativeChannel(wire: WirePort, mode: NativeMode, limits: { 
     }
     if(buffer.length>max)fail();
   };
-  async function request(scope:'read'|'setup', method:string, params:Readonly<Record<string,unknown>>={}):Promise<Readonly<Record<string,unknown>>>{
-    assertNativeRpc(scope,method,mode);
+  async function request(scope:'read'|'setup'|'write', method:string, params:Readonly<Record<string,unknown>>={}):Promise<Readonly<Record<string,unknown>>>{
+    assertNativeRpc(scope,method,mode,writesEnabled);
     if(scope==='setup'){const expected:Record<string,string>={setTdlibParameters:'authorizationStateWaitTdlibParameters',setAuthenticationPhoneNumber:'authorizationStateWaitPhoneNumber',checkAuthenticationCode:'authorizationStateWaitCode',checkAuthenticationPassword:'authorizationStateWaitPassword'};if(wasReady||expected[method]!==authState)throw new Error('AUTH_PHASE_REJECTED');}
     if(state!=='running')throw new Error('NATIVE_NOT_RUNNING');
     if(pending.size>=pendingMax)throw new Error('NATIVE_PENDING_LIMIT');
@@ -71,9 +74,11 @@ export function createNativeChannel(wire: WirePort, mode: NativeMode, limits: { 
     async start(){if(state!=='stopped')throw new Error('NATIVE_START_REJECTED');state='running';removeData=wire.onData(receive);removeExit=wire.onExit(fail);},
     stop,getLifecycleState:()=>state,
     async send(payload:TdlibClientPayload){
-      assertNativeRpc('read',payload['@type'],mode);
+      const method = payload['@type'];
+      const scope = isWriteRpc(method) ? 'write' : 'read';
+      assertNativeRpc(scope, method, mode, writesEnabled);
       if(typeof payload['@extra']!=='string')throw new Error('NATIVE_CORRELATION_REQUIRED');
-      const response=await request('read',payload['@type'],payload);emit({kind:'response',extra:payload['@extra'],payload:response});
+      const response=await request(scope, method, payload);emit({kind:'response',extra:payload['@extra'],payload:response});
     },
     subscribe(fn:(event:TdlibTransportEvent)=>void){listeners.add(fn);return()=>{listeners.delete(fn);};},
   });

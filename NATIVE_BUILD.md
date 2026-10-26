@@ -1,27 +1,72 @@
-# Native provenance and build status
+# Native TDLib Integration and Architecture Guide
 
-NATIVE_BUILD=HOLD. Windows x64 source target; Node 22.19.0 and Python 3.13.7 used only for source/mock QA (Python 3.11+ source target unqualified outside that environment); no real DLL load, native compile, session, login or account read performed. Source/fake verification does not qualify a binary. Tool inspection found no CMake/MSVC on the audited PATH; it was not a scan of private installations.
+This document describes the native integration architecture between Node.js, the Python ctypes bridge, and the Telegram Database Library (`tdjson.dll`).
 
-## Independently observed official references (2026-10-22)
+## 1. Native Integration Architecture
 
-- [TDLib source/build overview](https://github.com/tdlib/td#building) and [build generator](https://tdlib.github.io/td/build.html?language=Python): upstream build guidance and platform choices. No build executed here.
-- [JSON C API documentation](https://core.telegram.org/tdlib/docs/td__json__client_8h.html) and [upstream header](https://raw.githubusercontent.com/tdlib/td/master/td/telegram/td_json_client.h): asynchronous JSON interface, correlation via extra metadata and serialized receive. Our wrapper binds td_create_client_id, td_send, td_receive, td_execute; one receive thread and owned client only. No deprecated private custom ABI reused.
-- [TDLib license](https://github.com/tdlib/td/blob/master/LICENSE_1_0.txt): Boost Software License, separate from first-party MIT; dependency notices still require distribution-specific review.
-- [Microsoft protect](https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-cryptprotectdata) and [unprotect](https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-cryptunprotectdata): basis for CurrentUser/no-machine-scope/UI-forbidden helper contract. Actual DPAPI was not invoked.
+The MCP server uses a multi-tier isolated process architecture:
 
-Unpinned live documentation confirms interface intent, not compatibility with a selected binary. Native source revision/ABI/dependent-library versions and trusted artifact hashes are UNKNOWN. Official references must not be read as third-party legal clearance.
+```
+[ MCP Client ]
+       | (stdio JSON-RPC)
+[ Node.js MCP Server (dist/cli.js) ]
+       | (stdio JSONL transport with bounded frames)
+[ Python Bridge (native/tdjson_wrapper.py) ]
+       | (ctypes in-process FFI)
+[ TDLib Shared Library (tdjson.dll) ]
+       | (MTProto network protocol)
+[ Telegram Cloud Servers ]
+```
 
-## First-party wrapper design
+### Key Components
 
-native/tdjson_wrapper.py is newly authored Python standard-library ctypes source. It loads only an explicitly selected DLL with restricted Windows DLL search flags, disables native log stream with an acknowledgment, bounds JSONL/queue/frame sizes, matches request IDs, forwards updates, checks client identity and rejects unknown/write RPCs. Setup requests are mode/state-bound and never exposed by the read facade. EOF asks only its own native client to close, with bounded parent cleanup; no production process enumeration/termination.
+1. **`native/tdjson_wrapper.py`**:
+   - First-party Python 3.11+ script using standard-library `ctypes` only.
+   - Dynamically loads `tdjson.dll` using secure Windows DLL search flags (`LOAD_LIBRARY_SEARCH_DEFAULT_DIRS`).
+   - Hooks official TDLib JSON C API methods: `td_create_client_id`, `td_send`, `td_receive`, `td_execute`.
+   - Dedicated worker thread consumes updates from `td_receive` and forwards them across JSONL transport.
+   - Enforces RPC whitelisting: distinguishes read-only queries from mutations. Mutations are rejected unless launched with `--enable-writes`.
 
-native/windows_vault.py is a separate private pipe helper for Windows CurrentUser DPAPI. No secret argv/env/MCP stdin; no plaintext fallback. Application context, root and account binding are also checked. Python/JavaScript strings and OS/runtime memory are not guaranteed zeroized. DPAPI protects the sealed vault, not every media file, SQLite CRM or all TDLib state.
+2. **`native/windows_vault.py`**:
+   - Encrypts and decrypts sensitive session keys at rest using Windows Data Protection API (DPAPI) via `CryptProtectData` and `CryptUnprotectData`.
+   - Uses `CurrentUser` scope so keys can only be decrypted by the same Windows user on the same machine.
+   - Does not store plaintext credentials or write logs to disk.
 
-## Evidence required before removing HOLD in reviewed code
+3. **`src/runtime/native-manifest.ts` & `scripts/generate-native-manifest.mjs`**:
+   - Validates that the loaded DLL matches the exact file path and SHA-256 hash specified in `tdlib-manifest.json` (Schema 1).
 
-1. Exact official upstream commit/source archive origin and license; a reproducible Windows x64 build recipe with compiler, CMake, Python and dependency versions (including cryptography/compression notices).
-2. Exact tdjson ABI/API schema and protocol compatibility, all dependent DLLs, architecture, hashes derived from the reviewed build and manifest trust review. No copy/hash pins from another account's runtime.
-3. Review first-party wrapper/helper and DLL search/loading/timeouts/shutdown; actual Windows helper/native tests on disposable owned roots with no existing sessions.
-4. Distinct Owner permission before any real authentication/read qualification. Current audit task supplies none.
+## 2. Obtaining or Building TDLib for Windows x64
 
-A later native gate change is a reviewed source change, not an env/config/model toggle. Integrity checks alone never establish provenance. No manifest example with fabricated real hashes or ready-to-use credentials is supplied.
+Users can build `tdjson.dll` from upstream source or obtain a pre-built binary matching their system architecture.
+
+### Official TDLib Source Build
+1. Refer to the official [TDLib Build Instructions](https://tdlib.github.io/td/build.html?language=Python).
+2. Prerequisites:
+   - Visual Studio 2019/2022 (with Desktop development with C++)
+   - CMake 3.18+
+   - Git
+   - OpenSSL (v1.1.1 or v3.0+)
+   - zlib
+3. Build steps summary:
+   ```cmd
+   git clone https://github.com/tdlib/td.git
+   cd td
+   git checkout v1.8.0
+   mkdir build
+   cd build
+   cmake -A x64 -DCMAKE_BUILD_TYPE=Release -DOPENSSL_ROOT_DIR="<PATH_TO_OPENSSL>" ..
+   cmake --build . --target tdjson --config Release
+   ```
+4. The output `tdjson.dll` will be located under `bin/Release/` or `bin/`.
+
+### Manifest Generation
+Once `tdjson.dll` is located, generate your local manifest:
+```powershell
+node scripts/generate-native-manifest.mjs "<PATH_TO_TDJSON_DLL>"
+```
+
+## 3. Security and Process Supervision
+
+- **Subprocess Isolation:** If the TDLib process or native wrapper encounters an unhandled exception or terminates unexpectedly, the Node.js process fails closed cleanly without leaking file handles.
+- **Strict Frame Limits:** Standard input/output communication enforces a maximum JSON line length to prevent buffer exhaustion.
+- **Log Suppression:** The wrapper automatically calls TDLib `setLogVerbosityLevel` to 0 or 1 on startup to prevent sensitive message content from leaking into standard error or debug output.

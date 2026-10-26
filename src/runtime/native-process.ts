@@ -2,8 +2,10 @@ import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import type { WirePort } from './native-channel.js';
 import type { NativeMode } from './native-policy.js';
 /** Only fixed generic wrapper and verified explicit bundle files; secrets never in argv/env. */
-export function spawnNativeWire(python:string, wrapper:string, dll:string, mode:NativeMode):WirePort {
-  const child=spawn(python,['-I','-B',wrapper,'--dll',dll,'--mode',mode],{stdio:'pipe',windowsHide:true,env:{SystemRoot:process.env.SystemRoot??'',PATH:process.env.PATH??''}}) as ChildProcessWithoutNullStreams;
+export function spawnNativeWire(python:string, wrapper:string, dll:string, mode:NativeMode, writesEnabled = false):WirePort {
+  const args = ['-I', '-B', wrapper, '--dll', dll, '--mode', mode];
+  if (writesEnabled) args.push('--enable-writes');
+  const child=spawn(python,args,{stdio:'pipe',windowsHide:true,env:{SystemRoot:process.env.SystemRoot??'',PATH:process.env.PATH??''}}) as ChildProcessWithoutNullStreams;
   let stderrBytes=0, stopped:Promise<void>|undefined, ended=false;
   child.stderr.on('data',(b:Buffer)=>{stderrBytes+=b.length;if(stderrBytes>4096)child.kill();});
   child.on('error',()=>{ended=true;});child.on('exit',()=>{ended=true;});

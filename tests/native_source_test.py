@@ -32,6 +32,12 @@ class OfflineNativeSource(unittest.TestCase):
         self.assertFalse(bridge.allowed('read', 'checkAuthenticationCode', 'fresh'))
         self.assertFalse(bridge.allowed('setup', 'checkAuthenticationCode', 'reopen'))
         self.assertTrue(bridge.allowed('setup', 'setTdlibParameters', 'reopen'))
+    def test_write_scope_admitted_only_when_writes_enabled(self):
+        for m in ['sendMessage', 'deleteMessages', 'viewMessages', 'editMessageText']:
+            self.assertFalse(bridge.allowed('write', m, 'reopen', writes_enabled=False))
+            self.assertTrue(bridge.allowed('write', m, 'reopen', writes_enabled=True))
+        for m in ['setChatTitle', 'unknown']:
+            self.assertFalse(bridge.allowed('write', m, 'reopen', writes_enabled=True))
     def test_json_encoder_bounded_without_native_library(self):
         self.assertIn(b'@type', bridge.encode({'@type': 'TEST_ONLY'}))
         with self.assertRaises(ValueError): bridge.encode({'data': 'x' * (bridge.MAX + 1)})
