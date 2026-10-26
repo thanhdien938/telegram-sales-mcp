@@ -68,7 +68,7 @@ During login:
 2. Enter your phone number in international format (`+country_code_number`).
 3. Enter the Telegram OTP verification code received on your devices or SMS.
 4. Enter your Two-Factor Authentication (2FA) cloud password if enabled.
-5. All sensitive input is hidden (no terminal echo). The session encryption key is encrypted at rest using Windows DPAPI (`CurrentUser` scope) and saved into `<STATE_DIR>/session.json`.
+5. All sensitive input is hidden (no terminal echo). Telegram API credentials and session encryption keys are encrypted at rest using Windows DPAPI (`CurrentUser` scope) and stored in `<STATE_DIR>/vault.bin`; `<STATE_DIR>/session.json` contains account and session binding metadata without exposing raw secrets.
 
 ## 6. Initialize Local Sales CRM
 

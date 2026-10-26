@@ -181,7 +181,7 @@ test('D1: Doctor strictly fails on PM reproduction case (writes requested with n
   assert.equal(writesCheck?.status, 'FAIL', 'Write actions opt-in must FAIL when preconditions unmet');
 
   assert(report.summary.includes('FAIL'), 'Summary must report failures');
-  assert(report.summary.includes('Tools ready to execute: 0/33'));
+  assert(report.summary.includes('Configured prerequisites (live not yet validated): 0/33'));
 
   // Test that CLI command actually exits with 1
   const cliRes = spawnSync(process.execPath, [
@@ -241,6 +241,7 @@ test('D2: Doctor reports 33/33 ready when all prerequisites are fully configured
   assert.equal(report.isHealthy, true, `Report should be healthy: ${report.summary}`);
   assert.equal(report.toolsReady, 33, `All 33 tools should be ready to execute: got ${report.toolsReady}`);
   assert.equal(report.toolsRegistered, 33, `All 33 tools registered: got ${report.toolsRegistered}`);
+  assert(report.summary.includes('Configured prerequisites (live not yet validated): 33/33'));
 
   const writesCheck = report.checks.find((c) => c.name === 'Write Actions Opt-in');
   assert.equal(writesCheck?.status, 'PASS');

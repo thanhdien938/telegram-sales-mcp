@@ -92,7 +92,7 @@ node dist/login.js --state "<STATE_DIR>" --native-manifest "<MANIFEST_PATH>" --p
 2. Enter your phone number in international format (`+<country_code><phone_number>`).
 3. Enter the verification code sent to your Telegram apps.
 4. If cloud password (2FA) is enabled, enter it securely.
-5. All credentials are encrypted with Windows DPAPI and stored in `<STATE_DIR>/session.json`.
+5. Telegram API credentials and authentication tokens are encrypted with Windows DPAPI and stored in `<STATE_DIR>/vault.bin`; `<STATE_DIR>/session.json` contains account and session binding metadata without exposing raw secrets.
 
 ### Procedure D: Reopening an Existing Session
 To reopen an existing session without prompting for credentials, run:
@@ -120,7 +120,7 @@ All mutations will be strictly confined to `<TARGET_CHAT_ID>`. Calls attempting 
 
 | Issue / Error | Root Cause | Solution |
 |---|---|---|
-| `NATIVE_MANIFEST_MISMATCH` | The SHA-256 hash in `tdlib-manifest.json` does not match the actual `tdjson.dll` file. | Re-run `npm run generate:manifest "<PATH_TO_TDJSON_DLL>"` to update the manifest. |
+| `NATIVE_MANIFEST_MISMATCH` | The SHA-256 hash in `manifest.json` does not match the actual `tdjson.dll` file. | Re-run `node scripts/generate-native-manifest.mjs --dll "<PATH_TO_TDJSON_DLL>" --commit "<REAL_TDLIB_COMMIT_SHA>" --out "<USER_NATIVE_BUNDLE_DIR>"` to update the manifest. |
 | `WRITER_LOCK_ACQUISITION_FAILED` | Another instance of the MCP server or login script is holding `writer.lock` in the state directory. | Ensure only one server process is active per state directory. If a prior process crashed, inspect the process list and remove the stale lock file if no process is active. |
 | `DPAPI_UNPROTECT_FAILED` | The session file was copied from another machine or another Windows user profile. | Session keys are protected with CurrentUser DPAPI and cannot be shared across machines. Re-run `dist/login.js` on the current machine. |
 | `TARGET_CHAT_MISMATCH` | An action tool or quick-reply send was invoked with an unapproved chat ID. | In single-user mode, all writes are bound strictly to the chat specified in `--chat-id`. Ensure your requests target the bound chat ID. |

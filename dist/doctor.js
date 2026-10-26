@@ -320,7 +320,7 @@ export function runDoctor(options = {}) {
     const warnCount = checks.filter((c) => c.status === 'WARN').length;
     const failCount = checks.filter((c) => c.status === 'FAIL').length;
     const isHealthy = failCount === 0;
-    const summary = `Doctor Result: ${passCount} PASS, ${warnCount} WARN, ${failCount} FAIL. Tools ready to execute: ${toolsReady}/33 (Registered schemas: ${toolsRegistered}/33).`;
+    const summary = `Doctor Result: ${passCount} PASS, ${warnCount} WARN, ${failCount} FAIL. Configured prerequisites (live not yet validated): ${toolsReady}/33 (Registered schemas: ${toolsRegistered}/33).`;
     return {
         checks,
         toolsReady,
