@@ -37,9 +37,18 @@ The MCP server uses a multi-tier isolated process architecture:
 
 ## 2. Obtaining or Building TDLib for Windows x64
 
-Users can build `tdjson.dll` from upstream source or obtain a pre-built binary matching their system architecture.
+This repository is distributed without pre-built native binaries. Users can obtain or compile `tdjson.dll` using one of the following methods:
 
-### Official TDLib Source Build
+### Option A: NuGet Pre-Built Package (`tdlib.native.win-x64`)
+For users who do not wish to compile TDLib from C++ source, the public NuGet package [`tdlib.native.win-x64`](https://www.nuget.org/packages/tdlib.native.win-x64/) (maintained by ForNeVeR) provides pre-compiled 64-bit Windows binaries:
+1. Download package via NuGet CLI or extract the `.nupkg` archive as a ZIP:
+   ```powershell
+   nuget install tdlib.native.win-x64 -Version 1.8.67 -OutputDirectory C:\temp\nuget-tdlib
+   ```
+2. Locate `tdjson.dll` under `runtimes/win-x64/native/` alongside its dependencies (`libcrypto-3-x64.dll`, `libssl-3-x64.dll`, `z.dll`).
+3. Note: This is an independent open-source packaging distribution, not an official binary distributed directly by the core Telegram team. See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) for licensing attribution.
+
+### Option B: Official TDLib Source Build
 1. Refer to the official [TDLib Build Instructions](https://tdlib.github.io/td/build.html?language=Python).
 2. Prerequisites:
    - Visual Studio 2019/2022 (with Desktop development with C++)

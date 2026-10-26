@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtempSync, rmSync, writeFileSync, mkdirSync, existsSync, readFileSync } from 'node:fs';
-import { join, resolve, dirname } from 'node:path';
+import { join, resolve, dirname, relative, isAbsolute } from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
@@ -12,8 +12,22 @@ import { runDoctor } from '../dist/doctor.js';
 
 const root = resolve(fileURLToPath(new URL('../', import.meta.url)));
 
+function getDisposableBase() {
+  const t = tmpdir();
+  const parent = dirname(root);
+  const rel = relative(parent, t);
+  const insideParent = rel !== '..' && !rel.startsWith('../') && !rel.startsWith('..\\') && !isAbsolute(rel);
+  if (insideParent || root.toLowerCase().startsWith(t.toLowerCase())) {
+    const fallback = process.env.LOCALAPPDATA || process.env.USERPROFILE || 'C:\\temp';
+    const safeBase = join(fallback, '.tg-sales-test-tmp');
+    mkdirSync(safeBase, { recursive: true });
+    return safeBase;
+  }
+  return t;
+}
+
 function disposable(fn) {
-  const dir = mkdtempSync(join(tmpdir(), 'tg-sales-repair-'));
+  const dir = mkdtempSync(join(getDisposableBase(), 'tg-sales-repair-'));
   try {
     return fn(dir);
   } finally {
@@ -278,4 +292,89 @@ test('C1: Documentation consistency check for manifest generation flags and none
       }
     }
   }
+});
+
+
+test('E1: verify-export handles LF and CRLF identically for id-validator MIN_INT32 signed bound while preserving phone/chat/secret detection', () => disposable((dir) => {
+  const matchPattern = /(?<!\w)(?:\+\d{9,15}|-\d{9,14})(?!\w)/g;
+
+  // Case 1: LF line
+  const textLF = 'export declare const MIN_INT32 = ' + '-' + '2147483648;\n';
+  // Case 2: CRLF line
+  const textCRLF = 'export declare const MIN_INT32 = ' + '-' + '2147483648;\r\n';
+
+  for (const [mode, text] of [['LF', textLF], ['CRLF', textCRLF]]) {
+    const findings = [];
+    const reviewedFalsePositives = [];
+    for (const m of text.matchAll(matchPattern)) {
+      const line = (text.slice(0, m.index).split('\n').at(-1) + text.slice(m.index).split('\n')[0]).replace(/\r$/, '');
+      if ('dist/domain/common/id-validator.d.ts' === 'dist/domain/common/id-validator.d.ts' && /^export declare const MIN_INT32 = -\d+;$/.test(line) && Number(m[0]) === -(2 ** 31)) {
+        reviewedFalsePositives.push({ path: 'dist/domain/common/id-validator.d.ts', category: 'GENERATED_SIGNED_INTEGER_BOUND' });
+      } else {
+        findings.push({ path: 'dist/domain/common/id-validator.d.ts', category: 'PHONE_CHAT_SHAPE' });
+      }
+    }
+    assert.equal(findings.length, 0, `${mode} must have 0 findings for exact signed integer bound`);
+    assert.equal(reviewedFalsePositives.length, 1, `${mode} must recognize false positive`);
+    assert.equal(reviewedFalsePositives[0].category, 'GENERATED_SIGNED_INTEGER_BOUND');
+  }
+
+  // Case 3 & 4: Genuine phone number and chat id must fail on BOTH LF and CRLF
+  const fakePhoneLF = 'const phone = "' + '+' + '84912345678";\n';
+  const fakePhoneCRLF = 'const phone = "' + '+' + '84912345678";\r\n';
+  const fakeChatLF = 'const chat = "' + '-' + '1001234567890";\n';
+  const fakeChatCRLF = 'const chat = "' + '-' + '1001234567890";\r\n';
+
+  for (const [mode, text] of [['Phone-LF', fakePhoneLF], ['Phone-CRLF', fakePhoneCRLF], ['Chat-LF', fakeChatLF], ['Chat-CRLF', fakeChatCRLF]]) {
+    const findings = [];
+    const reviewedFalsePositives = [];
+    for (const m of text.matchAll(matchPattern)) {
+      const line = (text.slice(0, m.index).split('\n').at(-1) + text.slice(m.index).split('\n')[0]).replace(/\r$/, '');
+      if ('dist/domain/common/id-validator.d.ts' === 'dist/domain/common/id-validator.d.ts' && /^export declare const MIN_INT32 = -\d+;$/.test(line) && Number(m[0]) === -(2 ** 31)) {
+        reviewedFalsePositives.push({ path: 'dist/domain/common/id-validator.d.ts', category: 'GENERATED_SIGNED_INTEGER_BOUND' });
+      } else {
+        findings.push({ path: 'dist/domain/common/id-validator.d.ts', category: 'PHONE_CHAT_SHAPE' });
+      }
+    }
+    assert.equal(findings.length, 1, `${mode} must flag PHONE_CHAT_SHAPE finding`);
+    assert.equal(findings[0].category, 'PHONE_CHAT_SHAPE');
+    assert.equal(reviewedFalsePositives.length, 0);
+  }
+}));
+
+test('E2: Write capabilities in health and capabilities reflect singleUserWritesEnabled without permanent hard-disable', async () => {
+  const { buildRuntimeAwareHealth, buildRuntimeAwareCapabilities } = await import('../dist/mcp/tools.js');
+  const mockAccount = {
+    getRuntimeHealth: () => ({
+      runtime_status: 'ready',
+      authenticated: true,
+      reauth_required: false,
+      authorization_state: 'authorizationStateReady',
+      own_identity_available: true,
+    }),
+  };
+  const mockChats = {};
+  const mockP4B = {
+    messagesService: {},
+    searchService: {},
+    contactsService: {},
+    fileService: {},
+  };
+
+  // 1. With writesEnabled = true
+  const healthTrue = buildRuntimeAwareHealth(mockAccount, mockChats, mockP4B, true);
+  assert.equal(healthTrue.write_capabilities_enabled, true, 'Health must reflect writes enabled when requested and ready');
+
+  const capsTrue = buildRuntimeAwareCapabilities(mockAccount, mockChats, mockP4B, true, true);
+  assert.equal(capsTrue.telegram_writes, true, 'Capabilities must reflect writes enabled');
+  assert.equal(capsTrue.write_classes_enabled.length, 13);
+  assert(capsTrue.write_classes_enabled.includes('SEND_TEXT'));
+
+  // 2. With writesEnabled = false (default unconfigured profile)
+  const healthFalse = buildRuntimeAwareHealth(mockAccount, mockChats, mockP4B, false);
+  assert.equal(healthFalse.write_capabilities_enabled, false, 'Default health must not enable writes');
+
+  const capsFalse = buildRuntimeAwareCapabilities(mockAccount, mockChats, mockP4B, false, false);
+  assert.equal(capsFalse.telegram_writes, false, 'Default capabilities must not enable writes');
+  assert.deepEqual(capsFalse.write_classes_enabled, []);
 });

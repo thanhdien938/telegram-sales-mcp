@@ -7,7 +7,7 @@ This guide describes how to install, configure, and operate the Telegram Sales M
 - **OS:** Windows 10 or 11 (64-bit x64 architecture).
 - **Node.js:** v22.19.0 or higher.
 - **Python:** v3.11+ 64-bit (standard CPython with standard `ctypes` library).
-- **TDLib:** 64-bit `tdjson.dll` compiled from the [official TDLib repository](https://github.com/tdlib/td) or downloaded from trusted releases.
+- **TDLib:** 64-bit `tdjson.dll` compiled from the [official TDLib repository](https://github.com/tdlib/td) or downloaded from trusted releases (such as NuGet package `tdlib.native.win-x64`; see [NATIVE_BUILD.md](NATIVE_BUILD.md) and [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)).
 - **Telegram Account:** An active Telegram account with API credentials (`api_id` and `api_hash`) obtained from [my.telegram.org](https://my.telegram.org).
 
 ## 2. Clone and Offline Verification
@@ -22,7 +22,7 @@ cd telegram-sales-mcp
 npm ci --ignore-scripts --userconfig .npmrc --globalconfig config/npm-globalrc
 npm run build
 
-# Run offline regression test suite (42 tests)
+# Run offline regression test suite (50+ tests)
 npm run test:offline
 ```
 

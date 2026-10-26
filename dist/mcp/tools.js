@@ -59,7 +59,6 @@ export const P4B_TOOL_NAMES = Object.freeze([
     'telegram_file_get',
 ]);
 export function buildRuntimeAwareHealth(accountService, chatsService, p4bServices, singleUserWritesEnabled = false) {
-    singleUserWritesEnabled = false;
     if (!accountService) {
         return P2_HEALTH_RESPONSE;
     }
@@ -128,7 +127,6 @@ export function buildRuntimeAwareHealth(accountService, chatsService, p4bService
     });
 }
 export function buildRuntimeAwareCapabilities(accountService, chatsService, p4bServices, singleUserWritesEnabled = false, salesLocalEnabled = false) {
-    singleUserWritesEnabled = false;
     if (!accountService) {
         return Object.freeze({ ...P2_CAPABILITIES_RESPONSE, sales_local: salesLocalEnabled });
     }
